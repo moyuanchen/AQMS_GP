@@ -261,7 +261,7 @@ def preprocess_macro_factors(bc_df, annual_df, ir):
             bc_renamed[col] = bc_renamed[col] / 100
     
     # Calculate excess returns (equity returns minus risk-free rate)
-    countries = ['US', 'UK', 'Japan', 'Hong Kong', 'Canada', 'Euro', 'Australia', 'New Zealand']
+    countries = ['US', 'UK', 'JP', 'Hong Kong', 'Canada', 'Euro', 'Australia', 'New Zealand']
     
     # Remove Switzerland (CH) as it's not in interest rate data
     if 'CH' in countries:
