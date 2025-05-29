@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
-
+import warnings
+warnings.filterwarnings('ignore')
 def load_aqms_data(filepath):
     """
     Load and process AQMS Excel file containing asset price data.
