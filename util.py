@@ -927,7 +927,7 @@ def construct_rs_portfolio(ar_df, mf_df):
     }
 
 
-def create_asset_class_portfolio_mp(asset_returns, rs_scores, asset_class, target_vol=0.01):
+def create_asset_class_portfolio_mp(asset_returns, mp_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
@@ -997,7 +997,7 @@ def create_asset_class_portfolio_mp(asset_returns, rs_scores, asset_class, targe
     return weights
 
 
-def create_asset_class_portfolio_it(asset_returns, rs_scores, asset_class, target_vol=0.01):
+def create_asset_class_portfolio_it(asset_returns, it_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
@@ -1067,7 +1067,7 @@ def create_asset_class_portfolio_it(asset_returns, rs_scores, asset_class, targe
     return weights
 
 
-def create_asset_class_portfolio_bc(asset_returns, rs_scores, asset_class, target_vol=0.01):
+def create_asset_class_portfolio_bc(asset_returns, bc_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
