@@ -724,75 +724,6 @@ def calculate_bc_momentum(mf_df):
     return pd.DataFrame(bc_scores)
 
 
-def create_asset_class_portfolio(asset_returns, bc_scores, asset_class, target_vol=0.01):
-    """
-    Modified version with correct weight standardization
-    """
-    # Get relevant assets for this class
-    if asset_class == 'Equity':
-        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
-        countries = [col.split('_')[1] for col in assets]
-        # Equities: Long growth/inflation decline
-        raw_scores = bc_scores[countries]  # Get scores for relevant countries
-        
-    elif asset_class == 'FX':
-        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
-        countries = [col.split('_')[1] for col in assets]
-        # FX: Long growth/inflation increase (Balassa-Samuelson)
-        raw_scores = bc_scores[countries]
-        
-    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
-        prefix = {
-            'Bond2Y': 'BondYield2Y_',
-            'Bond10Y': 'BondYield10Y_',
-            'IRFutures': 'IRFutures_'
-        }[asset_class]
-        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
-        countries = [col.split('_')[-1] for col in assets]
-        # Fixed Income: Short growth/inflation increase
-        raw_scores = -bc_scores[countries]
-        
-    # Create DataFrame of raw scores aligned with asset returns index
-    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
-    for asset, country in zip(assets, countries):
-        raw_weights[asset] = raw_scores[country]
-    
-    # Standardize weights using row-wise z-scoring
-    weights = standardize_weights(raw_weights)
-    
-    if len(assets) > 1:
-        returns = asset_returns[assets].dropna()
-        weights = weights.loc[returns.index]
-        min_years = 5
-        portfolio_vol = pd.Series(index=weights.index, dtype=float)
-        
-        for i in range(min_years, len(weights)):
-            current_date = weights.index[i]
-            lookback_dates = weights.index[i-min_years:i]
-            w_current = weights.loc[current_date].values.reshape(-1, 1)
-            hist_returns = returns.loc[lookback_dates]
-            
-            if len(hist_returns.dropna()) >= min_years:
-                C = hist_returns.cov()
-                
-                # Convert covariance to numpy array if needed
-                C_matrix = C.values if hasattr(C, 'values') else C
-                
-                try:
-                    # Proper matrix multiplication and scalar conversion
-                    var = float(w_current.T @ C_matrix @ w_current)
-                    portfolio_vol.loc[current_date] = np.sqrt(var)
-                except Exception as e:
-                    print(f"Vol calc error at {current_date}: {str(e)}")
-                    portfolio_vol.loc[current_date] = np.nan
-        
-        # Forward fill and apply scaling
-        portfolio_vol = portfolio_vol.ffill()
-        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
-        weights = weights.mul(scaling_factors, axis=0)
-    
-    return weights
-
 
 def construct_bc_portfolio(ar_df, mf_df):
     """
@@ -802,10 +733,10 @@ def construct_bc_portfolio(ar_df, mf_df):
     bc_scores = calculate_bc_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio(ar_df, bc_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio(ar_df, bc_scores, 'FX')
-    bond2y_weights = create_asset_class_portfolio(ar_df, bc_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio(ar_df, bc_scores, 'Bond10Y')
+    equity_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond10Y')
     # ir_weights = create_asset_class_portfolio(ar_df, bc_scores, 'IRFutures')
     
     # Combine all weights
@@ -846,75 +777,6 @@ def calculate_it_momentum(mf_df):
     return pd.DataFrame(it_scores)
 
 
-def create_asset_class_portfolio(asset_returns, it_scores, asset_class, target_vol=0.01):
-    """
-    Modified version with correct weight standardization
-    """
-    # Get relevant assets for this class
-    if asset_class == 'Equity':
-        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
-        countries = [col.split('_')[1] for col in assets]
-        # Equities: Depre -> High trade -> good for equity
-        raw_scores = it_scores[countries]  # Get scores for relevant countries
-        
-    elif asset_class == 'FX':
-        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
-        countries = [col.split('_')[1] for col in assets]
-        # FX: Depre -> bearish for fx
-        raw_scores = -it_scores[countries]
-        
-    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
-        prefix = {
-            'Bond2Y': 'BondYield2Y_',
-            'Bond10Y': 'BondYield10Y_',
-            # 'IRFutures': 'IRFutures_'
-        }[asset_class]
-        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
-        countries = [col.split('_')[-1] for col in assets]
-        # Fixed Income: Depre -> High trade -> Reduce inflation&economy -> possible rate decrease -> bullish for Fixed Income
-        raw_scores = -it_scores[countries]
-        
-    # Create DataFrame of raw scores aligned with asset returns index
-    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
-    for asset, country in zip(assets, countries):
-        raw_weights[asset] = raw_scores[country]
-    
-    # Standardize weights using row-wise z-scoring
-    weights = standardize_weights(raw_weights)
-    
-    if len(assets) > 1:
-        returns = asset_returns[assets].dropna()
-        weights = weights.loc[returns.index]
-        min_years = 5
-        portfolio_vol = pd.Series(index=weights.index, dtype=float)
-        
-        for i in range(min_years, len(weights)):
-            current_date = weights.index[i]
-            lookback_dates = weights.index[i-min_years:i]
-            w_current = weights.loc[current_date].values.reshape(-1, 1)
-            hist_returns = returns.loc[lookback_dates]
-            
-            if len(hist_returns.dropna()) >= min_years:
-                C = hist_returns.cov()
-                
-                # Convert covariance to numpy array if needed
-                C_matrix = C.values if hasattr(C, 'values') else C
-                
-                try:
-                    # Proper matrix multiplication and scalar conversion
-                    var = float(w_current.T @ C_matrix @ w_current)
-                    portfolio_vol.loc[current_date] = np.sqrt(var)
-                except Exception as e:
-                    print(f"Vol calc error at {current_date}: {str(e)}")
-                    portfolio_vol.loc[current_date] = np.nan
-        
-        # Forward fill and apply scaling
-        portfolio_vol = portfolio_vol.ffill()
-        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
-        weights = weights.mul(scaling_factors, axis=0)
-    
-    return weights
-
 
 def construct_it_portfolio(ar_df, mf_df):
     """
@@ -924,10 +786,10 @@ def construct_it_portfolio(ar_df, mf_df):
     it_scores = calculate_it_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio(ar_df, it_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio(ar_df, it_scores, 'FX')
-    bond2y_weights = create_asset_class_portfolio(ar_df, it_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio(ar_df, it_scores, 'Bond10Y')
+    equity_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond10Y')
     # ir_weights = create_asset_class_portfolio(ar_df, it_scores, 'IRFutures')
     
     # Combine all weights
@@ -969,7 +831,103 @@ def calculate_mp_momentum(mf_df):
     return pd.DataFrame(mp_scores)
 
 
-def create_asset_class_portfolio(asset_returns, mp_scores, asset_class, target_vol=0.01):
+
+
+def construct_mp_portfolio(ar_df, mf_df):
+    """
+    Construct complete Business Cycle long-short portfolio across all asset classes
+    """
+    # Calculate BC momentum scores
+    mp_scores = calculate_mp_momentum(mf_df)
+    
+    # Create portfolios for each asset class
+    equity_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Bond10Y')
+    # ir_weights = create_asset_class_portfolio(ar_df, mp_scores, 'IRFutures')
+    
+    # Combine all weights
+    all_weights = pd.concat([
+        equity_weights,
+        fx_weights,
+        bond2y_weights,
+        bond10y_weights,
+        # ir_weights
+    ], axis=1).fillna(0)
+    
+    # Calculate portfolio returns
+    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
+    
+    return {
+        'weights': all_weights,
+        'returns': portfolio_returns,
+        'components': {
+            'Equity': equity_weights,
+            'FX': fx_weights,
+            'Bond2Y': bond2y_weights,
+            'Bond10Y': bond10y_weights,
+            # 'IRFutures': ir_weights
+        }
+    }
+def calculate_rs_momentum(mf_df):
+    # It's no longer lagged like GDP
+    rs_factors = mf_df.filter(like='ExcessReturn_')
+    
+    rs_scores = {}
+    for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('ExcessReturn_')]:
+        rs_col = f'ExcessReturn_{country}'
+        
+        # Here sign is positive, control later
+        rs_signal = rs_factors[rs_col].diff() # Here signal is the change in yield so diffed
+        rs_scores[country] = rs_signal
+    
+    return pd.DataFrame(rs_scores)
+
+
+
+
+
+def construct_rs_portfolio(ar_df, mf_df):
+    """
+    Construct complete Business Cycle long-short portfolio across all asset classes
+    """
+    # Calculate BC momentum scores
+    rs_scores = calculate_rs_momentum(mf_df)
+    
+    # Create portfolios for each asset class
+    equity_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Bond10Y')
+    # ir_weights = create_asset_class_portfolio(ar_df, rs_scores, 'IRFutures')
+    
+    # Combine all weights
+    all_weights = pd.concat([
+        equity_weights,
+        fx_weights,
+        bond2y_weights,
+        bond10y_weights,
+        # ir_weights
+    ], axis=1).fillna(0)
+    
+    # Calculate portfolio returns
+    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
+    
+    return {
+        'weights': all_weights,
+        'returns': portfolio_returns,
+        'components': {
+            'Equity': equity_weights,
+            'FX': fx_weights,
+            'Bond2Y': bond2y_weights,
+            'Bond10Y': bond10y_weights,
+            # 'IRFutures': ir_weights
+        }
+    }
+
+
+def create_asset_class_portfolio_mp(asset_returns, rs_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
@@ -1039,59 +997,7 @@ def create_asset_class_portfolio(asset_returns, mp_scores, asset_class, target_v
     return weights
 
 
-def construct_mp_portfolio(ar_df, mf_df):
-    """
-    Construct complete Business Cycle long-short portfolio across all asset classes
-    """
-    # Calculate BC momentum scores
-    mp_scores = calculate_mp_momentum(mf_df)
-    
-    # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio(ar_df, mp_scores, 'FX')
-    bond2y_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Bond10Y')
-    # ir_weights = create_asset_class_portfolio(ar_df, mp_scores, 'IRFutures')
-    
-    # Combine all weights
-    all_weights = pd.concat([
-        equity_weights,
-        fx_weights,
-        bond2y_weights,
-        bond10y_weights,
-        # ir_weights
-    ], axis=1).fillna(0)
-    
-    # Calculate portfolio returns
-    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
-    
-    return {
-        'weights': all_weights,
-        'returns': portfolio_returns,
-        'components': {
-            'Equity': equity_weights,
-            'FX': fx_weights,
-            'Bond2Y': bond2y_weights,
-            'Bond10Y': bond10y_weights,
-            # 'IRFutures': ir_weights
-        }
-    }
-def calculate_rs_momentum(mf_df):
-    # It's no longer lagged like GDP
-    rs_factors = mf_df.filter(like='ExcessReturn_')
-    
-    rs_scores = {}
-    for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('ExcessReturn_')]:
-        rs_col = f'ExcessReturn_{country}'
-        
-        # Here sign is positive, control later
-        rs_signal = rs_factors[rs_col].diff() # Here signal is the change in yield so diffed
-        rs_scores[country] = rs_signal
-    
-    return pd.DataFrame(rs_scores)
-
-
-def create_asset_class_portfolio(asset_returns, rs_scores, asset_class, target_vol=0.01):
+def create_asset_class_portfolio_it(asset_returns, rs_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
@@ -1099,10 +1005,146 @@ def create_asset_class_portfolio(asset_returns, rs_scores, asset_class, target_v
     if asset_class == 'Equity':
         assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
         countries = [col.split('_')[1] for col in assets]
-        # print(countries)
-        # print(rs_scores)
+        # Equities: Depre -> High trade -> good for equity
+        raw_scores = it_scores[countries]  # Get scores for relevant countries
+        
+    elif asset_class == 'FX':
+        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
+        countries = [col.split('_')[1] for col in assets]
+        # FX: Depre -> bearish for fx
+        raw_scores = -it_scores[countries]
+        
+    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
+        prefix = {
+            'Bond2Y': 'BondYield2Y_',
+            'Bond10Y': 'BondYield10Y_',
+            'IRFutures': 'IRFutures_'
+        }[asset_class]
+        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
+        countries = [col.split('_')[-1] for col in assets]
+        # Fixed Income: Depre -> High trade -> Reduce inflation&economy -> possible rate decrease -> bullish for Fixed Income
+        raw_scores = -it_scores[countries]
+        
+    # Create DataFrame of raw scores aligned with asset returns index
+    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
+    for asset, country in zip(assets, countries):
+        raw_weights[asset] = raw_scores[country]
+    
+    # Standardize weights using row-wise z-scoring
+    weights = standardize_weights(raw_weights)
+    
+    if len(assets) > 1:
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
+        
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
+                
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
+        
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
+    
+    return weights
+
+
+def create_asset_class_portfolio_bc(asset_returns, rs_scores, asset_class, target_vol=0.01):
+    """
+    Modified version with correct weight standardization
+    """
+    # Get relevant assets for this class
+    if asset_class == 'Equity':
+        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
+        countries = [col.split('_')[1] for col in assets]
+        # Equities: Long growth/inflation decline
+        raw_scores = bc_scores[countries]  # Get scores for relevant countries
+        
+    elif asset_class == 'FX':
+        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
+        countries = [col.split('_')[1] for col in assets]
+        # FX: Long growth/inflation increase (Balassa-Samuelson)
+        raw_scores = bc_scores[countries]
+        
+    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
+        prefix = {
+            'Bond2Y': 'BondYield2Y_',
+            'Bond10Y': 'BondYield10Y_',
+            'IRFutures': 'IRFutures_'
+        }[asset_class]
+        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
+        countries = [col.split('_')[-1] for col in assets]
+        # Fixed Income: Short growth/inflation increase
+        raw_scores = -bc_scores[countries]
+        
+    # Create DataFrame of raw scores aligned with asset returns index
+    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
+    for asset, country in zip(assets, countries):
+        raw_weights[asset] = raw_scores[country]
+    
+    # Standardize weights using row-wise z-scoring
+    weights = standardize_weights(raw_weights)
+    
+    if len(assets) > 1:
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
+        
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
+                
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
+        
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
+    
+    return weights
+
+def create_asset_class_portfolio_rs(asset_returns, rs_scores, asset_class, target_vol=0.01):
+    """
+    Modified version with correct weight standardization
+    """
+    # Get relevant assets for this class
+    if asset_class == 'Equity':
+        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
+        countries = [col.split('_')[1] for col in assets]
         # Equities: Yield up -> stock val down -> bearish to equity
-        print(rs_scores)
         raw_scores = -rs_scores[countries]  # Get scores for relevant countries
         
     elif asset_class == 'FX':
@@ -1111,11 +1153,11 @@ def create_asset_class_portfolio(asset_returns, rs_scores, asset_class, target_v
         # FX: Yield up -> bullish for currency
         raw_scores = rs_scores[countries]
         
-    elif asset_class in ['Bond2Y', 'Bond10Y']:
+    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
         prefix = {
             'Bond2Y': 'BondYield2Y_',
             'Bond10Y': 'BondYield10Y_',
-            # 'IRFutures': 'IRFutures_'
+            'IRFutures': 'IRFutures_'
         }[asset_class]
         assets = [col for col in asset_returns.columns if col.startswith(prefix)]
         countries = [col.split('_')[-1] for col in assets]
@@ -1162,42 +1204,3 @@ def create_asset_class_portfolio(asset_returns, rs_scores, asset_class, target_v
         weights = weights.mul(scaling_factors, axis=0)
     
     return weights
-
-
-def construct_rs_portfolio(ar_df, mf_df):
-    """
-    Construct complete Business Cycle long-short portfolio across all asset classes
-    """
-    # Calculate BC momentum scores
-    rs_scores = calculate_rs_momentum(mf_df)
-    
-    # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio(ar_df, rs_scores, 'FX')
-    bond2y_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Bond10Y')
-    # ir_weights = create_asset_class_portfolio(ar_df, rs_scores, 'IRFutures')
-    
-    # Combine all weights
-    all_weights = pd.concat([
-        equity_weights,
-        fx_weights,
-        bond2y_weights,
-        bond10y_weights,
-        # ir_weights
-    ], axis=1).fillna(0)
-    
-    # Calculate portfolio returns
-    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
-    
-    return {
-        'weights': all_weights,
-        'returns': portfolio_returns,
-        'components': {
-            'Equity': equity_weights,
-            'FX': fx_weights,
-            'Bond2Y': bond2y_weights,
-            'Bond10Y': bond10y_weights,
-            # 'IRFutures': ir_weights
-        }
-    }
