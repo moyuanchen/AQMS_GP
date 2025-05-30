@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import warnings
-warnings.filterwarnings('ignore')
 def load_aqms_data(filepath):
     """
     Load and process AQMS Excel file containing asset price data.
@@ -158,6 +156,7 @@ def preprocess_asset_data(aqms_df):
         'CA': ['CABROVER Index'],
         'AU': ['RBATCTR Index'],
         'NZ': ['NZOCR Index'],
+        'CH': ['SZNBPOLR Index']
     }
     
     # Create renaming dictionary
@@ -234,7 +233,8 @@ def preprocess_macro_factors(bc_df, annual_df, ir):
         'European Union': 'EU',
         'Switzerland': 'CH',
         'Australia': 'AU',
-        'New Zealand': 'NZ'
+        'New Zealand': 'NZ',
+        'Switzerland': 'CH'
     }
     
     # Rename columns in business cycle data
@@ -261,11 +261,7 @@ def preprocess_macro_factors(bc_df, annual_df, ir):
             bc_renamed[col] = bc_renamed[col] / 100
     
     # Calculate excess returns (equity returns minus risk-free rate)
-    countries = ['US', 'UK', 'JP', 'Hong Kong', 'Canada', 'Euro', 'Australia', 'New Zealand']
-    
-    # Remove Switzerland (CH) as it's not in interest rate data
-    if 'CH' in countries:
-        countries.remove('CH')
+    countries = ['US', 'UK', 'Japan', 'Hong Kong', 'Canada', 'Euro', 'Australia', 'New Zealand','Switzerland']
     
     # Calculate excess returns for each country
     for country in countries:
@@ -289,6 +285,192 @@ def preprocess_macro_factors(bc_df, annual_df, ir):
     mf = mf[(mf.index.year >= 1980) & (mf.index.year <= 2025)]
     
     return mf
+
+def preprocess_asset_data_daily(aqms_df):
+    """
+    Preprocess asset data to calculate annual returns and yields.
+    
+    Args:
+        aqms_df (pd.DataFrame): Raw AQMS DataFrame
+        
+    Returns:
+        pd.DataFrame: Processed annual returns and yields
+    """
+    # Define asset categories
+    equity = ['US', 'UK', 'Japan', 'Hong Kong', 'Canada', 'Euro', 'Switzerland', 'New Zealand', 'Australia']
+    
+    int_future = ['SFRA Comdty', 'SFR1YZ2 Comdty', 'SFR1YZ3 Comdty', 
+                  'SFR1YZ4 Comdty', 'SFR1YZ5 Comdty', 'SFR1YZ6 Comdty', 
+                  'SFR2YZ2 Comdty']
+    
+    raw = ['JP', 'EU', 'HK', 'CH', 'CA', 'AU', 'NZ']
+    currency = raw + ['GBP']
+    gov_bond = raw + ['US', 'UK']
+    
+    # Initialize lists for asset columns
+    gb2y, gb10y, curr, eqt, irf = [], [], [], [], []
+    
+    # Categorize columns
+    for name in aqms_df.columns:
+        for e in equity:
+            if (e in name) and ('Equity' in name) and ('Pan' not in name):
+                eqt.append(name)
+                
+        for g in gov_bond:
+            if (g in name) and ('2' in name) and ('Bond' in name):
+                gb2y.append(name)
+            if (g in name) and ('10' in name) and ('Bond' in name):
+                gb10y.append(name)
+                
+        for c in currency:
+            if (c in name) and ('Curncy' in name):
+                curr.append(name)
+                
+        for i in int_future:
+            if (i in name) and ('Future' in name):
+                irf.append(name)
+    
+    # Process interest rate columns
+    rate_mapping = {
+        'US': ['FDTR Index'],
+        'UK': ['UKBRBASE Index'],
+        'JP': ['BOJDTR Index'],
+        'EU': ['EURR002W Index'],
+        'HK': ['PRIMHK Index'],
+        'CA': ['CABROVER Index'],
+        'AU': ['RBATCTR Index'],
+        'NZ': ['NZOCR Index'],
+        'CH': ['SZNBPOLR Index']
+    }
+    
+    # Create renaming dictionary
+    renaming_dict = {}
+    for col in aqms_df.columns:
+        for abbr, indices in rate_mapping.items():
+            for index in indices:
+                if index in col:
+                    renaming_dict[col] = col.replace(index, abbr)
+    
+    # Rename columns and get interest rate columns
+    aqms_renamed = aqms_df.rename(columns=renaming_dict)
+    ir = aqms_renamed[list(renaming_dict.values())]
+    
+    # Combine all asset data
+    assets = pd.concat([
+        aqms_renamed[eqt], 
+        aqms_renamed[gb2y], 
+        aqms_renamed[gb10y], 
+        aqms_renamed[curr], 
+        aqms_renamed[irf]
+    ], axis=1)
+    
+    # Forward and backward fill missing values
+    assets_imputed = assets.ffill().bfill()
+    ir_imputed = ir.ffill().bfill()
+    
+    # Calculate annual returns for price-like assets
+    price_cols = [col for col in assets.columns 
+                 if col.startswith('Equity_') 
+                 or col.startswith('Currency_') 
+                 or 'IR Future' in col]
+    
+    log_returns = np.log(assets_imputed[price_cols] / assets_imputed[price_cols].shift(1))
+    # annual_log_returns = log_returns.resample('Y').sum()
+    # annual_returns = np.exp(annual_log_returns) - 1
+    
+    # Calculate annual average yields for bonds and interests
+    # annual_yields = assets_imputed[gb2y + gb10y].resample('Y').mean() / 100
+    # ir_annual = ir_imputed.resample('Y').mean() / 100
+    
+    # Combine returns and yields
+    daily_df = pd.concat([np.exp(log_returns) - 1, assets_imputed[gb2y + gb10y]], axis=1)
+    
+    return daily_df, ir_imputed
+
+
+
+def preprocess_macro_factors(bc_df, annual_df, ir):
+    """
+    Preprocess macro factors from business cycle data and asset returns.
+    
+    Args:
+        bc_df (pd.DataFrame): Business cycle DataFrame
+        annual_df (pd.DataFrame): Annual asset returns DataFrame
+        ir: df of imputed and annual average dataframe
+        
+    Returns:
+        pd.DataFrame: Processed macro factors DataFrame
+    """
+    # Initialize macro factors DataFrame
+    mf = pd.DataFrame(index=annual_df.index)
+    
+    # Country code mapping for consistent naming
+    country_to_abbr = {
+        'US': 'US',
+        'United States': 'US',
+        'UK': 'UK',
+        'United Kingdom': 'UK',
+        'Japan': 'JP',
+        'Hong Kong': 'HK',
+        'Hong Kong SAR': 'HK',
+        'Canada': 'CA',
+        'Euro': 'EU',
+        'European Union': 'EU',
+        'Switzerland': 'CH',
+        'Australia': 'AU',
+        'New Zealand': 'NZ',
+        'Switzerland': 'CH'
+    }
+    
+    # Rename columns in business cycle data
+    renamed_columns = {}
+    for col in bc_df.columns:
+        if col.startswith('GDP_'):
+            for country, abbr in country_to_abbr.items():
+                if col == f'GDP_{country}':
+                    renamed_columns[col] = f'GDP_{abbr}'
+        elif col.startswith('CPI_'):
+            for country, abbr in country_to_abbr.items():
+                if col == f'CPI_{country}':
+                    renamed_columns[col] = f'CPI_{abbr}'
+    
+    bc_renamed = bc_df.rename(columns=renamed_columns)
+    bc_renamed = bc_renamed[renamed_columns.values()]
+
+    # Convert business cycle data to numeric, handling 'no data' entries
+    for col in bc_renamed.columns:
+        if col.startswith(('GDP_', 'CPI_')):
+            # Convert to numeric, coercing errors to NaN
+            bc_renamed[col] = pd.to_numeric(bc_renamed[col], errors='coerce')
+            # Divide by 100 only for valid numeric values
+            bc_renamed[col] = bc_renamed[col] / 100
+    
+    # Calculate excess returns (equity returns minus risk-free rate)
+    countries = ['US', 'UK', 'Japan', 'Hong Kong', 'Canada', 'Euro', 'Australia', 'New Zealand','Switzerland']
+    
+    # Calculate excess returns for each country
+    for country in countries:
+        equity_return = annual_df[f'Equity_{country}']
+        risk_free_rate = ir[f'Interest Rates_{country_to_abbr[country]}']
+        mf[f'Excess_Return_{country_to_abbr[country]}'] = equity_return - risk_free_rate
+    
+    # Add business cycle data (GDP and CPI)
+    mf = mf.join(bc_renamed, how='left')
+    
+    # Add currency returns
+    currency_cols = [col for col in annual_df.columns if col.startswith("Currency_")]
+    mf = mf.join(annual_df[currency_cols], how='left')
+    
+    # Add monetary policy proxies (2-year bond yields)
+    monetary_policy_cols = [col for col in annual_df.columns 
+                          if col.startswith("Bond Yield 2Y_")]
+    mf = mf.join(annual_df[monetary_policy_cols], how='left')
+    
+    # Filter to desired time period (1980-2025)
+    mf = mf[(mf.index.year >= 1980) & (mf.index.year <= 2025)]
+    
+    return mf
+
 # Unify column names
 def standardize_column_names(df):
     """
@@ -459,23 +641,24 @@ def create_us_centric_trade_factors(mf_df):
             changes = []
             for col in currency_cols:
                 other_country = col.split('_')[1]
+                
                 if other_country == 'JP':
-                    changes.append(np.log(mf_df[col]).diff())  # JPY is USD/JPY
+                    changes.append(1/(1+mf_df[col])-1)  # JPY is USD/JPY
                 else:
-                    changes.append(np.log(1/mf_df[col]).diff())  # Others are FCY/USD
+                    changes.append(mf_df[col])  # Others are FCY/USD
             if changes:
                 mf_df[f'TradeFactor_US'] = pd.DataFrame(changes).mean()
         else:
             # For non-US countries: use their currency vs USD
             col = f'Currency_{country}'
             if country == 'JP':
-                mf_df[f'TradeFactor_{country}'] = np.log(mf_df[col]).diff()
+                mf_df[f'TradeFactor_{country}'] = mf_df[col]
             else:
-                mf_df[f'TradeFactor_{country}'] = np.log(1/mf_df[col]).diff()
+                mf_df[f'TradeFactor_{country}'] = mf_df[col]
     
     # Apply 1-year smoothing
-    trade_cols = [col for col in mf_df.columns if col.startswith('TradeFactor_')]
-    mf_df[trade_cols] = mf_df[trade_cols].rolling(window=12).mean()
+    # trade_cols = [col for col in mf_df.columns if col.startswith('TradeFactor_')]
+    # mf_df[trade_cols] = mf_df[trade_cols].rolling(window=12).mean()
     
     return mf_df
 def standardize_weights(raw_weights):
@@ -520,8 +703,8 @@ def calculate_bc_momentum(mf_df):
     - 50% 1-year CPI inflation change
     """
     # Calculate 1-year changes for GDP and CPI
-    gdp_changes = mf_df.filter(like='GDP_').diff(12)
-    cpi_changes = mf_df.filter(like='CPI_').diff(12)
+    gdp_changes = mf_df.filter(like='GDP_').diff()
+    cpi_changes = mf_df.filter(like='CPI_').diff()
     
     # Combine 50/50 with proper sign conventions
     bc_scores = {}
@@ -541,7 +724,7 @@ def calculate_bc_momentum(mf_df):
     return pd.DataFrame(bc_scores)
 
 
-def create_asset_class_portfolio(asset_returns, bc_scores, asset_class, target_vol=0.10):
+def create_asset_class_portfolio(asset_returns, bc_scores, asset_class, target_vol=0.01):
     """
     Modified version with correct weight standardization
     """
@@ -578,41 +761,35 @@ def create_asset_class_portfolio(asset_returns, bc_scores, asset_class, target_v
     weights = standardize_weights(raw_weights)
     
     if len(assets) > 1:
-        # Ensure we only use complete periods
-        valid_returns = asset_returns[assets].dropna()
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
         
-        # Initialize portfolio variance
-        portfolio_variance = pd.Series(index=weights.index, dtype=float)
-        
-        for date in weights.index:
-            if date in valid_returns.index:
-                # Get current weights and filter to available assets
-                current_weights = weights.loc[date]
-                available_assets = current_weights.dropna().index
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
                 
-                if len(available_assets) > 0:
-                    # Get corresponding covariance matrix
-                    cov_matrix = valid_returns[available_assets].rolling(5).cov().loc[date]
-                    
-                    # Check dimension match
-                    if cov_matrix.shape[0] == len(available_assets):
-                        w = current_weights[available_assets].values.reshape(-1, 1)
-                        C = cov_matrix.values
-                        try:
-                            var = (w.T @ C @ w).item()
-                            portfolio_variance.loc[date] = var
-                        except ValueError:
-                            portfolio_variance.loc[date] = np.nan
-                    else:
-                        portfolio_variance.loc[date] = np.nan
-                else:
-                    portfolio_variance.loc[date] = np.nan
-            else:
-                portfolio_variance.loc[date] = np.nan
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
         
-        # Calculate scaling factor
-        scaling_factor = target_vol / np.sqrt(portfolio_variance)
-        weights = weights.mul(scaling_factor, axis=0)
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
     
     return weights
 
@@ -629,15 +806,15 @@ def construct_bc_portfolio(ar_df, mf_df):
     fx_weights = create_asset_class_portfolio(ar_df, bc_scores, 'FX')
     bond2y_weights = create_asset_class_portfolio(ar_df, bc_scores, 'Bond2Y')
     bond10y_weights = create_asset_class_portfolio(ar_df, bc_scores, 'Bond10Y')
-    ir_weights = create_asset_class_portfolio(ar_df, bc_scores, 'IRFutures')
+    # ir_weights = create_asset_class_portfolio(ar_df, bc_scores, 'IRFutures')
     
     # Combine all weights
     all_weights = pd.concat([
         equity_weights,
         fx_weights,
-        bond2y_weights,
-        bond10y_weights,
-        ir_weights
+        bond2y_weights/2,
+        bond10y_weights/2,
+        # ir_weights
     ], axis=1).fillna(0)
     
     # Calculate portfolio returns
@@ -651,6 +828,376 @@ def construct_bc_portfolio(ar_df, mf_df):
             'FX': fx_weights,
             'Bond2Y': bond2y_weights,
             'Bond10Y': bond10y_weights,
-            'IRFutures': ir_weights
+            # 'IRFutures': ir_weights
+        }
+    }
+def calculate_it_momentum(mf_df):
+    # It's no longer lagged like GDP
+    it_factors = mf_df.filter(like='TradeFactor_')
+    
+    it_scores = {}
+    for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('TradeFactor_')]:
+        it_col = f'TradeFactor_{country}'
+        
+        # Here sign is positive, control later
+        it_signal = it_factors[it_col]
+        it_scores[country] = -it_signal # Turn appreciation into deprecition
+        
+    return pd.DataFrame(it_scores)
+
+
+def create_asset_class_portfolio(asset_returns, it_scores, asset_class, target_vol=0.01):
+    """
+    Modified version with correct weight standardization
+    """
+    # Get relevant assets for this class
+    if asset_class == 'Equity':
+        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
+        countries = [col.split('_')[1] for col in assets]
+        # Equities: Depre -> High trade -> good for equity
+        raw_scores = it_scores[countries]  # Get scores for relevant countries
+        
+    elif asset_class == 'FX':
+        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
+        countries = [col.split('_')[1] for col in assets]
+        # FX: Depre -> bearish for fx
+        raw_scores = -it_scores[countries]
+        
+    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
+        prefix = {
+            'Bond2Y': 'BondYield2Y_',
+            'Bond10Y': 'BondYield10Y_',
+            # 'IRFutures': 'IRFutures_'
+        }[asset_class]
+        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
+        countries = [col.split('_')[-1] for col in assets]
+        # Fixed Income: Depre -> High trade -> Reduce inflation&economy -> possible rate decrease -> bullish for Fixed Income
+        raw_scores = -it_scores[countries]
+        
+    # Create DataFrame of raw scores aligned with asset returns index
+    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
+    for asset, country in zip(assets, countries):
+        raw_weights[asset] = raw_scores[country]
+    
+    # Standardize weights using row-wise z-scoring
+    weights = standardize_weights(raw_weights)
+    
+    if len(assets) > 1:
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
+        
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
+                
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
+        
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
+    
+    return weights
+
+
+def construct_it_portfolio(ar_df, mf_df):
+    """
+    Construct complete International Trade long-short portfolio across all asset classes
+    """
+    # Calculate BC momentum scores
+    it_scores = calculate_it_momentum(mf_df)
+    
+    # Create portfolios for each asset class
+    equity_weights = create_asset_class_portfolio(ar_df, it_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio(ar_df, it_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio(ar_df, it_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio(ar_df, it_scores, 'Bond10Y')
+    # ir_weights = create_asset_class_portfolio(ar_df, it_scores, 'IRFutures')
+    
+    # Combine all weights
+    all_weights = pd.concat([
+        equity_weights,
+        fx_weights,
+        bond2y_weights/2,
+        bond10y_weights/2,
+        # ir_weights
+    ], axis=1).fillna(0)
+    
+    # Calculate portfolio returns
+    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
+    
+    return {
+        'weights': all_weights,
+        'returns': portfolio_returns,
+        'components': {
+            'Equity': equity_weights,
+            'FX': fx_weights,
+            'Bond2Y': bond2y_weights,
+            'Bond10Y': bond10y_weights,
+            # 'IRFutures': ir_weights
+        }
+    }
+def calculate_mp_momentum(mf_df):
+    # It's no longer lagged like GDP
+    mp_factors = mf_df.filter(like='BondYield2Y_')
+    
+    mp_scores = {}
+    for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('BondYield2Y_')]:
+        mp_col = f'BondYield2Y_{country}'
+        
+        # Here sign is positive, control later
+        mp_signal = mp_factors[mp_col].diff() # Here signal is the change in yield so diffed
+        mp_scores[country] = mp_signal
+        # print(mp_signal)
+    
+    return pd.DataFrame(mp_scores)
+
+
+def create_asset_class_portfolio(asset_returns, mp_scores, asset_class, target_vol=0.01):
+    """
+    Modified version with correct weight standardization
+    """
+    # Get relevant assets for this class
+    if asset_class == 'Equity':
+        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
+        countries = [col.split('_')[1] for col in assets]
+        # Equities: Yield up -> stock val down -> bearish to equity
+        raw_scores = -mp_scores[countries]  # Get scores for relevant countries
+        
+    elif asset_class == 'FX':
+        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
+        countries = [col.split('_')[1] for col in assets]
+        # FX: Yield up -> bullish for currency
+        raw_scores = mp_scores[countries]
+        
+    elif asset_class in ['Bond2Y', 'Bond10Y', 'IRFutures']:
+        prefix = {
+            'Bond2Y': 'BondYield2Y_',
+            'Bond10Y': 'BondYield10Y_',
+            'IRFutures': 'IRFutures_'
+        }[asset_class]
+        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
+        countries = [col.split('_')[-1] for col in assets]
+        # Fixed Income: Yield up -> price for fi assets down -> bullish for fi
+        raw_scores = -mp_scores[countries]
+        
+    # Create DataFrame of raw scores aligned wmph asset returns index
+    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
+    for asset, country in zip(assets, countries):
+        raw_weights[asset] = raw_scores[country]
+    
+    # Standardize weights using row-wise z-scoring
+    weights = standardize_weights(raw_weights)
+    
+    if len(assets) > 1:
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
+        
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
+                
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
+        
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
+    
+    return weights
+
+
+def construct_mp_portfolio(ar_df, mf_df):
+    """
+    Construct complete Business Cycle long-short portfolio across all asset classes
+    """
+    # Calculate BC momentum scores
+    mp_scores = calculate_mp_momentum(mf_df)
+    
+    # Create portfolios for each asset class
+    equity_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio(ar_df, mp_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio(ar_df, mp_scores, 'Bond10Y')
+    # ir_weights = create_asset_class_portfolio(ar_df, mp_scores, 'IRFutures')
+    
+    # Combine all weights
+    all_weights = pd.concat([
+        equity_weights,
+        fx_weights,
+        bond2y_weights,
+        bond10y_weights,
+        # ir_weights
+    ], axis=1).fillna(0)
+    
+    # Calculate portfolio returns
+    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
+    
+    return {
+        'weights': all_weights,
+        'returns': portfolio_returns,
+        'components': {
+            'Equity': equity_weights,
+            'FX': fx_weights,
+            'Bond2Y': bond2y_weights,
+            'Bond10Y': bond10y_weights,
+            # 'IRFutures': ir_weights
+        }
+    }
+def calculate_rs_momentum(mf_df):
+    # It's no longer lagged like GDP
+    rs_factors = mf_df.filter(like='ExcessReturn_')
+    
+    rs_scores = {}
+    for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('ExcessReturn_')]:
+        rs_col = f'ExcessReturn_{country}'
+        
+        # Here sign is positive, control later
+        rs_signal = rs_factors[rs_col].diff() # Here signal is the change in yield so diffed
+        rs_scores[country] = rs_signal
+    
+    return pd.DataFrame(rs_scores)
+
+
+def create_asset_class_portfolio(asset_returns, rs_scores, asset_class, target_vol=0.01):
+    """
+    Modified version with correct weight standardization
+    """
+    # Get relevant assets for this class
+    if asset_class == 'Equity':
+        assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
+        countries = [col.split('_')[1] for col in assets]
+        # print(countries)
+        # print(rs_scores)
+        # Equities: Yield up -> stock val down -> bearish to equity
+        print(rs_scores)
+        raw_scores = -rs_scores[countries]  # Get scores for relevant countries
+        
+    elif asset_class == 'FX':
+        assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
+        countries = [col.split('_')[1] for col in assets]
+        # FX: Yield up -> bullish for currency
+        raw_scores = rs_scores[countries]
+        
+    elif asset_class in ['Bond2Y', 'Bond10Y']:
+        prefix = {
+            'Bond2Y': 'BondYield2Y_',
+            'Bond10Y': 'BondYield10Y_',
+            # 'IRFutures': 'IRFutures_'
+        }[asset_class]
+        assets = [col for col in asset_returns.columns if col.startswith(prefix)]
+        countries = [col.split('_')[-1] for col in assets]
+        # Fixed Income: Yield up -> price for fi assets down -> bullish for fi
+        raw_scores = -rs_scores[countries]
+        
+    # Create DataFrame of raw scores aligned with asset returns index
+    raw_weights = pd.DataFrame(index=asset_returns.index, columns=assets)
+    for asset, country in zip(assets, countries):
+        raw_weights[asset] = raw_scores[country]
+    
+    # Standardize weights using row-wise z-scoring
+    weights = standardize_weights(raw_weights)
+    
+    if len(assets) > 1:
+        returns = asset_returns[assets].dropna()
+        weights = weights.loc[returns.index]
+        min_years = 5
+        portfolio_vol = pd.Series(index=weights.index, dtype=float)
+        
+        for i in range(min_years, len(weights)):
+            current_date = weights.index[i]
+            lookback_dates = weights.index[i-min_years:i]
+            w_current = weights.loc[current_date].values.reshape(-1, 1)
+            hist_returns = returns.loc[lookback_dates]
+            
+            if len(hist_returns.dropna()) >= min_years:
+                C = hist_returns.cov()
+                
+                # Convert covariance to numpy array if needed
+                C_matrix = C.values if hasattr(C, 'values') else C
+                
+                try:
+                    # Proper matrix multiplication and scalar conversion
+                    var = float(w_current.T @ C_matrix @ w_current)
+                    portfolio_vol.loc[current_date] = np.sqrt(var)
+                except Exception as e:
+                    print(f"Vol calc error at {current_date}: {str(e)}")
+                    portfolio_vol.loc[current_date] = np.nan
+        
+        # Forward fill and apply scaling
+        portfolio_vol = portfolio_vol.ffill()
+        scaling_factors = target_vol / np.sqrt(portfolio_vol.replace(0, np.nan))
+        weights = weights.mul(scaling_factors, axis=0)
+    
+    return weights
+
+
+def construct_rs_portfolio(ar_df, mf_df):
+    """
+    Construct complete Business Cycle long-short portfolio across all asset classes
+    """
+    # Calculate BC momentum scores
+    rs_scores = calculate_rs_momentum(mf_df)
+    
+    # Create portfolios for each asset class
+    equity_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Equity')
+    fx_weights = create_asset_class_portfolio(ar_df, rs_scores, 'FX')
+    bond2y_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Bond2Y')
+    bond10y_weights = create_asset_class_portfolio(ar_df, rs_scores, 'Bond10Y')
+    # ir_weights = create_asset_class_portfolio(ar_df, rs_scores, 'IRFutures')
+    
+    # Combine all weights
+    all_weights = pd.concat([
+        equity_weights,
+        fx_weights,
+        bond2y_weights,
+        bond10y_weights,
+        # ir_weights
+    ], axis=1).fillna(0)
+    
+    # Calculate portfolio returns
+    portfolio_returns = (all_weights.shift(1) * ar_df[all_weights.columns]).sum(axis=1)
+    
+    return {
+        'weights': all_weights,
+        'returns': portfolio_returns,
+        'components': {
+            'Equity': equity_weights,
+            'FX': fx_weights,
+            'Bond2Y': bond2y_weights,
+            'Bond10Y': bond10y_weights,
+            # 'IRFutures': ir_weights
         }
     }
