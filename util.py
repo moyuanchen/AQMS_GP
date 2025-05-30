@@ -851,8 +851,8 @@ def construct_mp_portfolio(ar_df, mf_df):
     all_weights = pd.concat([
         equity_weights,
         fx_weights,
-        bond2y_weights,
-        bond10y_weights,
+        bond2y_weights/2,
+        bond10y_weights/2,
         # ir_weights
     ], axis=1).fillna(0)
     
@@ -906,8 +906,8 @@ def construct_rs_portfolio(ar_df, mf_df):
     all_weights = pd.concat([
         equity_weights,
         fx_weights,
-        bond2y_weights,
-        bond10y_weights,
+        bond2y_weights/2,
+        bond10y_weights/2,
         # ir_weights
     ], axis=1).fillna(0)
     
