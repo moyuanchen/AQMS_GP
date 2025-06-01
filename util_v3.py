@@ -773,12 +773,14 @@ def calculate_it_momentum(mf_df):
     
     it_scores = {}
     for country in [col.split('_')[1] for col in mf_df.columns if col.startswith('TradeFactor_')]:
+        print(country)
         it_col = f'TradeFactor_{country}'
         
         # Here sign is positive, control later
         it_signal = it_factors[it_col]
         it_scores[country] = -it_signal # Turn appreciation into deprecition
         
+    # print(it_scores)
     return pd.DataFrame(it_scores)
 
 
