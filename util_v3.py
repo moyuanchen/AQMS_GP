@@ -730,7 +730,7 @@ def calculate_bc_momentum(mf_df):
 
 
 
-def construct_bc_portfolio(ar_df, mf_df):
+def construct_bc_portfolio(ar_df, mf_df, target_vol = 0.05):
     """
     Construct complete Business Cycle long-short portfolio across all asset classes
     """
@@ -738,11 +738,11 @@ def construct_bc_portfolio(ar_df, mf_df):
     bc_scores = calculate_bc_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'FX')
-    #bond2y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond10Y')
-    # ir_weights = create_asset_class_portfolio(ar_df, bc_scores, 'IRFutures')
+    equity_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Equity',target_vol=target_vol)
+    fx_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'FX',target_vol=target_vol)
+    #bond2y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond2Y',target_vol=target_vol)
+    bond10y_weights = create_asset_class_portfolio_bc(ar_df, bc_scores, 'Bond10Y',target_vol=target_vol)
+    # ir_weights = create_asset_class_portfolio(ar_df, bc_scores, 'IRFutures',target_vol=target_vol)
     
     # Combine all weights
     all_weights = pd.concat([
@@ -783,7 +783,7 @@ def calculate_it_momentum(mf_df):
 
 
 
-def construct_it_portfolio(ar_df, mf_df):
+def construct_it_portfolio(ar_df, mf_df,target_vol=0.05):
     """
     Construct complete International Trade long-short portfolio across all asset classes
     """
@@ -791,11 +791,11 @@ def construct_it_portfolio(ar_df, mf_df):
     it_scores = calculate_it_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'FX')
-    #bond2y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond10Y')
-    # ir_weights = create_asset_class_portfolio(ar_df, it_scores, 'IRFutures')
+    equity_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Equity',target_vol=target_vol)
+    fx_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'FX',target_vol=target_vol)
+    #bond2y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond2Y',target_vol=target_vol)
+    bond10y_weights = create_asset_class_portfolio_it(ar_df, it_scores, 'Bond10Y',target_vol=target_vol)
+    # ir_weights = create_asset_class_portfolio(ar_df, it_scores, 'IRFutures',target_vol=target_vol)
     
     # Combine all weights
     all_weights = pd.concat([
@@ -838,7 +838,7 @@ def calculate_mp_momentum(mf_df):
 
 
 
-def construct_mp_portfolio(ar_df, mf_df):
+def construct_mp_portfolio(ar_df, mf_df,target_vol=0.05):
     """
     Construct complete Business Cycle long-short portfolio across all asset classes
     """
@@ -846,10 +846,10 @@ def construct_mp_portfolio(ar_df, mf_df):
     mp_scores = calculate_mp_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'FX')
+    equity_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Equity',target_vol=target_vol)
+    fx_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'FX',target_vol=target_vol)
     #bond2y_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Bond10Y')
+    bond10y_weights = create_asset_class_portfolio_mp(ar_df, mp_scores, 'Bond10Y',target_vol=target_vol)
     # ir_weights = create_asset_class_portfolio(ar_df, mp_scores, 'IRFutures')
     
     # Combine all weights
@@ -893,7 +893,7 @@ def calculate_rs_momentum(mf_df):
 
 
 
-def construct_rs_portfolio(ar_df, mf_df):
+def construct_rs_portfolio(ar_df, mf_df, target_vol=0.05):
     """
     Construct complete Business Cycle long-short portfolio across all asset classes
     """
@@ -901,10 +901,10 @@ def construct_rs_portfolio(ar_df, mf_df):
     rs_scores = calculate_rs_momentum(mf_df)
     
     # Create portfolios for each asset class
-    equity_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Equity')
-    fx_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'FX')
+    equity_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Equity',target_vol=target_vol)
+    fx_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'FX',target_vol=target_vol)
     # bond2y_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Bond2Y')
-    bond10y_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Bond10Y')
+    bond10y_weights = create_asset_class_portfolio_rs(ar_df, rs_scores, 'Bond10Y',target_vol=target_vol)
     # ir_weights = create_asset_class_portfolio(ar_df, rs_scores, 'IRFutures')
     
     # Combine all weights

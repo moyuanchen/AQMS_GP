@@ -1006,6 +1006,7 @@ def create_asset_class_portfolio_it(asset_returns, it_scores, asset_class, targe
         assets = [col for col in asset_returns.columns if col.startswith('Equity_')]
         countries = [col.split('_')[1] for col in assets]
         # Equities: Depre -> High trade -> good for equity
+        print(countries)
         raw_scores = it_scores[countries]  # Get scores for relevant countries
         
     elif asset_class == 'FX':
@@ -1081,6 +1082,7 @@ def create_asset_class_portfolio_bc(asset_returns, bc_scores, asset_class, targe
     elif asset_class == 'FX':
         assets = [col for col in asset_returns.columns if col.startswith('FXReturn_')]
         countries = [col.split('_')[1] for col in assets]
+        print(countries)
         # FX: Long growth/inflation increase (Balassa-Samuelson)
         raw_scores = bc_scores[countries]
         
